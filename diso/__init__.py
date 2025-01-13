@@ -101,18 +101,12 @@ class DiffDMC(nn.Module):
 
 
     def is_concave_quad(self, v0, v1, v2, v3):
-        # Case 1: divide quad with (v0, v1, v2) and (v0, v2, v3)
-        n1_case1 = torch.cross(v1 - v0, v2 - v0, dim=-1)
-        n2_case1 = torch.cross(v2 - v0, v3 - v0, dim=-1)
+        n1_case = torch.cross(v1 - v0, v2 - v0, dim=-1)
+        n2_case = torch.cross(v2 - v0, v3 - v0, dim=-1)
 
-        # Case 2: divide quad with (v0, v1, v3) and (v1, v2, v3)
-        n1_case2 = torch.cross(v1 - v0, v3 - v0, dim=-1)
-        n2_case2 = torch.cross(v2 - v1, v3 - v1, dim=-1)
+        dot_case = torch.sum(n1_case * n2_case, dim=-1)
 
-        dot_case1 = torch.sum(n1_case1 * n2_case1, dim=-1)
-        dot_case2 = torch.sum(n1_case2 * n2_case2, dim=-1)
-
-        is_concave = (dot_case1 < 0) | (dot_case2 < 0)
+        is_concave = (dot_case < 0)
 
         return is_concave
     
@@ -162,13 +156,9 @@ class DiffDMC(nn.Module):
             angles1 = torch.max(angles1, dim=1)[0]
             angles2 = torch.max(angles2, dim=1)[0]
 
-            # Concave quads : minimizing min angle
-            concave_faces_1 = quads[is_concave][angles1[is_concave] >= angles2[is_concave]]
-            concave_faces_2 = quads[is_concave][angles1[is_concave] < angles2[is_concave]]
-
-            faces_concave_1 = concave_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
-            faces_concave_2 = concave_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
-
+            # Concave quads
+            faces_concave = quads[is_concave][:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            
             # Convex quads : maximizing min angle
             convex_faces_1 = quads[convex_quads][angles1[convex_quads] < angles2[convex_quads]]
             convex_faces_2 = quads[convex_quads][angles1[convex_quads] >= angles2[convex_quads]]
@@ -176,6 +166,6 @@ class DiffDMC(nn.Module):
             faces_convex_1 = convex_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
             faces_convex_2 = convex_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
 
-            faces = torch.cat([faces_concave_1, faces_concave_2, faces_convex_1, faces_convex_2], dim=0)
+            faces = torch.cat([faces_concave, faces_convex_1, faces_convex_2], dim=0)
 
             return verts, faces.long()
