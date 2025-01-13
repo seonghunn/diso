@@ -99,6 +99,23 @@ class DiffDMC(nn.Module):
 
         self.func = DDMCFunction
 
+
+    def is_concave_quad(self, v0, v1, v2, v3):
+        # Case 1: divide quad with (v0, v1, v2) and (v0, v2, v3)
+        n1_case1 = torch.cross(v1 - v0, v2 - v0, dim=-1)
+        n2_case1 = torch.cross(v2 - v0, v3 - v0, dim=-1)
+
+        # Case 2: divide quad with (v0, v1, v3) and (v1, v2, v3)
+        n1_case2 = torch.cross(v1 - v0, v3 - v0, dim=-1)
+        n2_case2 = torch.cross(v2 - v1, v3 - v1, dim=-1)
+
+        dot_case1 = torch.sum(n1_case1 * n2_case1, dim=-1)
+        dot_case2 = torch.sum(n1_case2 * n2_case2, dim=-1)
+
+        is_concave = (dot_case1 < 0) | (dot_case2 < 0)
+
+        return is_concave
+    
     def forward(self, grid, deform=None, isovalue=0.0, return_quads=False, normalize=True):
         if grid.min() >= isovalue or grid.max() <= isovalue:
             return torch.zeros((0, 3), dtype=self.dtype, device=grid.device), torch.zeros((0, 4), dtype=torch.int32, device=grid.device)
@@ -119,7 +136,11 @@ class DiffDMC(nn.Module):
             quads = quads.long()
             face_config1 = torch.tensor([[0, 1, 3], [1, 2, 3]])
             face_config2 = torch.tensor([[0, 1, 2], [0, 2, 3]])
-
+            
+            
+            v0, v1, v2, v3 = torch.unbind(verts[quads], dim=-2)
+            is_concave = self.is_concave_quad(v0, v1, v2, v3)
+            
             angles1, angles2 = [], []
             for i in range(len(face_config1)):
                 v0, v1, v2 = torch.unbind(verts[quads[:, face_config1[i]]], dim=-2)
@@ -137,11 +158,24 @@ class DiffDMC(nn.Module):
             angles1 = torch.stack(angles1, dim=-1)
             angles2 = torch.stack(angles2, dim=-1)
 
+            convex_quads = ~is_concave
             angles1 = torch.max(angles1, dim=1)[0]
             angles2 = torch.max(angles2, dim=1)[0]
 
-            faces_1 = quads[angles1 < angles2]
-            faces_2 = quads[angles1 >= angles2]
-            faces = torch.cat([faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3), faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)], dim=0)
-            
+            # Concave quads : minimizing min angle
+            concave_faces_1 = quads[is_concave][angles1[is_concave] >= angles2[is_concave]]
+            concave_faces_2 = quads[is_concave][angles1[is_concave] < angles2[is_concave]]
+
+            faces_concave_1 = concave_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            faces_concave_2 = concave_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
+
+            # Convex quads : maximizing min angle
+            convex_faces_1 = quads[convex_quads][angles1[convex_quads] < angles2[convex_quads]]
+            convex_faces_2 = quads[convex_quads][angles1[convex_quads] >= angles2[convex_quads]]
+
+            faces_convex_1 = convex_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            faces_convex_2 = convex_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
+
+            faces = torch.cat([faces_concave_1, faces_concave_2, faces_convex_1, faces_convex_2], dim=0)
+
             return verts, faces.long()
