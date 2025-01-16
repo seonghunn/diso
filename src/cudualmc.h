@@ -121,7 +121,7 @@ namespace cudualmc
     size_t allocated_quad_count{};
     size_t allocated_tris_count{};
     IndexType *__restrict__ mc_vert_to_cell{}; // vert index to cell index
-    Edge<IndexType> *__restrict__ mc_vert_to_edge{}; // vert index to edge sdf
+    Edge<Vertex<Scalar>> *__restrict__ mc_vert_to_edge{}; // vert index to edge sdf
     // 0: x entering, 1: y entering, 2: z entering
     // 3: x exiting, 4: y exiting, 5: z exiting
     uint8_t *__restrict__ mc_vert_type{};
