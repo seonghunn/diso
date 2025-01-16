@@ -32,8 +32,9 @@ deform = torch.nn.Parameter(
 diffmc = DiffMC(dtype=torch.float32)
 diffdmc = DiffDMC(dtype=torch.float32)
 
-verts, faces = diffdmc(sdf, None, isovalue=0, normalize = False)
-mesh = trimesh.Trimesh(vertices=verts.detach().cpu().numpy(), faces=faces.cpu().numpy(), process=False)
+verts, faces, tris = diffdmc(sdf, None, isovalue=0, normalize = False)
+mesh = trimesh.Trimesh(vertices=verts.detach().cpu().numpy(), faces=tris.cpu().numpy(), process=False)
+#mesh = trimesh.Trimesh(vertices=verts.detach().cpu().numpy(), faces=faces.cpu().numpy(), process=False)
 mesh.export("out/diso_origin.obj")
 
 # verts, faces = diffmc(sdf, None, isovalue=0)

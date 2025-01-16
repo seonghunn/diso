@@ -73,12 +73,12 @@ class DiffDMC(nn.Module):
             @staticmethod
             def forward(ctx, grid, deform, isovalue):
                 if deform is None:
-                    verts, quads = dmc.forward(grid, isovalue)
+                    verts, quads, tris = dmc.forward(grid, isovalue)
                 else:
-                    verts, quads = dmc.forward(grid, deform, isovalue)
+                    verts, quads, tris = dmc.forward(grid, deform, isovalue)
                 ctx.isovalue = isovalue
                 ctx.save_for_backward(grid, deform)
-                return verts, quads
+                return verts, quads, tris
 
             @staticmethod
             def backward(ctx, adj_verts, adj_faces):
@@ -117,55 +117,97 @@ class DiffDMC(nn.Module):
         grid = F.pad(grid, (1, 1, 1, 1, 1, 1), "constant", isovalue+1)
         if deform is not None:
             deform = F.pad(deform, (0, 0, 1, 1, 1, 1, 1, 1), "constant", 0)
-        verts, quads = self.func.apply(grid, deform, isovalue)
+        verts, quads, tris = self.func.apply(grid, deform, isovalue)
         verts = verts - 1
         if normalize:
             verts = verts / (
                 torch.tensor([dimX, dimY, dimZ], dtype=verts.dtype, device=verts.device) - 1
             )
+            
+        return verts, quads.long(), tris.long()
+    
+    
         if return_quads:
             return verts, quads.long()
         else:
-            # divide the quad into two triangles maximize the smallest angle within each triangle
+            # # divide the quad into two triangles maximize the smallest angle within each triangle
+            # quads = quads.long()
+            # face_config1 = torch.tensor([[0, 1, 3], [1, 2, 3]])
+            # face_config2 = torch.tensor([[0, 1, 2], [0, 2, 3]])
+            
+            
+            # v0, v1, v2, v3 = torch.unbind(verts[quads], dim=-2)
+            # is_concave = self.is_concave_quad(v0, v1, v2, v3)
+            # #is_concave_2 = self.is_concave_quad(v1, v2, v3, v0)
+            
+            # angles1, angles2 = [], []
+            # for i in range(len(face_config1)):
+            #     v0, v1, v2 = torch.unbind(verts[quads[:, face_config1[i]]], dim=-2)
+            #     cos1 = (F.normalize(v1-v0, dim=-1) * F.normalize(v2-v0, dim=-1)).sum(-1)
+            #     cos2 = (F.normalize(v2-v1, dim=-1) * F.normalize(v0-v1, dim=-1)).sum(-1)
+            #     cos3 = (F.normalize(v0-v2, dim=-1) * F.normalize(v1-v2, dim=-1)).sum(-1)
+            #     angles1.append(torch.max(torch.stack([cos1, cos2, cos3], dim=-1), dim=-1)[0])
+            # for i in range(len(face_config2)):
+            #     v0, v1, v2 = torch.unbind(verts[quads[:, face_config2[i]]], dim=-2)
+            #     cos1 = (F.normalize(v1-v0, dim=-1) * F.normalize(v2-v0, dim=-1)).sum(-1)
+            #     cos2 = (F.normalize(v2-v1, dim=-1) * F.normalize(v0-v1, dim=-1)).sum(-1)
+            #     cos3 = (F.normalize(v0-v2, dim=-1) * F.normalize(v1-v2, dim=-1)).sum(-1)
+            #     angles2.append(torch.max(torch.stack([cos1, cos2, cos3], dim=-1), dim=-1)[0])
+
+            # angles1 = torch.stack(angles1, dim=-1)
+            # angles2 = torch.stack(angles2, dim=-1)
+
+            # #convex_quads = ~is_concave_1 & ~is_concave_2
+            # convex_quads = ~is_concave
+            # angles1 = torch.max(angles1, dim=1)[0]
+            # angles2 = torch.max(angles2, dim=1)[0]
+
+            # # Concave quads
+            # faces_concave = quads[is_concave][:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            # #faces_concave_2 = quads[is_concave_2][:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
+            
+            # # Convex quads : maximizing min angle
+            # convex_faces_1 = quads[convex_quads][angles1[convex_quads] < angles2[convex_quads]]
+            # convex_faces_2 = quads[convex_quads][angles1[convex_quads] >= angles2[convex_quads]]
+
+            # faces_convex_1 = convex_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            # faces_convex_2 = convex_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
+
+            # faces = torch.cat([faces_concave, faces_convex_1, faces_convex_2], dim=0)
+
+            # return verts, faces.long()
             quads = quads.long()
             face_config1 = torch.tensor([[0, 1, 3], [1, 2, 3]])
             face_config2 = torch.tensor([[0, 1, 2], [0, 2, 3]])
-            
-            
-            v0, v1, v2, v3 = torch.unbind(verts[quads], dim=-2)
-            is_concave = self.is_concave_quad(v0, v1, v2, v3)
-            
-            angles1, angles2 = [], []
-            for i in range(len(face_config1)):
-                v0, v1, v2 = torch.unbind(verts[quads[:, face_config1[i]]], dim=-2)
-                cos1 = (F.normalize(v1-v0, dim=-1) * F.normalize(v2-v0, dim=-1)).sum(-1)
-                cos2 = (F.normalize(v2-v1, dim=-1) * F.normalize(v0-v1, dim=-1)).sum(-1)
-                cos3 = (F.normalize(v0-v2, dim=-1) * F.normalize(v1-v2, dim=-1)).sum(-1)
-                angles1.append(torch.max(torch.stack([cos1, cos2, cos3], dim=-1), dim=-1)[0])
-            for i in range(len(face_config2)):
-                v0, v1, v2 = torch.unbind(verts[quads[:, face_config2[i]]], dim=-2)
-                cos1 = (F.normalize(v1-v0, dim=-1) * F.normalize(v2-v0, dim=-1)).sum(-1)
-                cos2 = (F.normalize(v2-v1, dim=-1) * F.normalize(v0-v1, dim=-1)).sum(-1)
-                cos3 = (F.normalize(v0-v2, dim=-1) * F.normalize(v1-v2, dim=-1)).sum(-1)
-                angles2.append(torch.max(torch.stack([cos1, cos2, cos3], dim=-1), dim=-1)[0])
 
-            angles1 = torch.stack(angles1, dim=-1)
-            angles2 = torch.stack(angles2, dim=-1)
+            dihedral_angles1 = self.calculate_dihedral_angle(verts, quads, face_config1)
+            dihedral_angles2 = self.calculate_dihedral_angle(verts, quads, face_config2)
 
-            convex_quads = ~is_concave
-            angles1 = torch.max(angles1, dim=1)[0]
-            angles2 = torch.max(angles2, dim=1)[0]
+            # Choose configuration with maximum dihedral angle
+            best_config_mask = dihedral_angles1 >= dihedral_angles2
+            selected_faces_1 = quads[best_config_mask][:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
+            selected_faces_2 = quads[~best_config_mask][:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
 
-            # Concave quads
-            faces_concave = quads[is_concave][:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
-            
-            # Convex quads : maximizing min angle
-            convex_faces_1 = quads[convex_quads][angles1[convex_quads] < angles2[convex_quads]]
-            convex_faces_2 = quads[convex_quads][angles1[convex_quads] >= angles2[convex_quads]]
+            # Combine all faces
+            faces = torch.cat([selected_faces_1, selected_faces_2], dim=0)
 
-            faces_convex_1 = convex_faces_1[:, [0, 1, 3, 1, 2, 3]].view(-1, 3)
-            faces_convex_2 = convex_faces_2[:, [0, 1, 2, 0, 2, 3]].view(-1, 3)
+            return verts, faces.long(), tris.long()
 
-            faces = torch.cat([faces_concave, faces_convex_1, faces_convex_2], dim=0)
+    def calculate_dihedral_angle(self, verts, quads, face_config):
+        """Calculate the dihedral angle for quads split into two triangles."""
+        angles = []
+        for i in range(len(face_config)):
+            v0, v1, v2 = torch.unbind(verts[quads[:, face_config[i]]], dim=-2)
+            normal1 = F.normalize(torch.cross(v1 - v0, v2 - v0), dim=-1)
 
-            return verts, faces.long()
+            if i == 0:
+                v0_next, v1_next, v2_next = torch.unbind(verts[quads[:, face_config[1]]], dim=-2)
+            else:
+                v0_next, v1_next, v2_next = torch.unbind(verts[quads[:, face_config[0]]], dim=-2)
+
+            normal2 = F.normalize(torch.cross(v1_next - v0_next, v2_next - v0_next), dim=-1)
+            cos_angle = (normal1 * normal2).sum(dim=-1)
+            angle = torch.acos(torch.clamp(cos_angle, -1.0, 1.0))
+            angles.append(angle)
+
+        return torch.stack(angles, dim=-1).min(dim=-1)[0]

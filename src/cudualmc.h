@@ -19,6 +19,15 @@ namespace cudualmc
     {
       return x * other.x + y * other.y + z * other.z;
     }
+    inline __device__ __host__ Vertex<T> cross(Vertex<T> const &other) const
+    {
+        return {
+            y * other.z - z * other.y,
+            z * other.x - x * other.z,
+            x * other.y - y * other.x
+        };
+    }
+
 
     inline __device__ __host__ Vertex<T> operator-(Vertex<T> const &other) const
     {
@@ -67,6 +76,20 @@ namespace cudualmc
     inline __device__ __host__ T *data_ptr() { return &i; }
   };
 
+  template<typename T>
+  struct Triangle
+  {
+    T i, j, k;
+    inline __device__ __host__ T *data_ptr() { return &i; }
+  };
+  
+  template<typename T>
+  struct Edge
+  {
+    T i, j;
+    inline __device__ __host__ T *data_ptr() { return &i; }
+  };
+
   template <typename Scalar, typename IndexType>
   struct CUDualMC
   {
@@ -96,12 +119,14 @@ namespace cudualmc
 
     // quads
     size_t allocated_quad_count{};
+    size_t allocated_tris_count{};
     IndexType *__restrict__ mc_vert_to_cell{}; // vert index to cell index
+    Edge<IndexType> *__restrict__ mc_vert_to_edge{}; // vert index to edge sdf
     // 0: x entering, 1: y entering, 2: z entering
     // 3: x exiting, 4: y exiting, 5: z exiting
     uint8_t *__restrict__ mc_vert_type{};
     Quad<IndexType> *__restrict__ quads{}; // output quads
-
+    Triangle<IndexType> *__restrict__ tris{};
     // TODO
     // Vertex<Scalar> *__restrict__ mc_verts{};
 
@@ -139,6 +164,7 @@ namespace cudualmc
     __host__ void ensure_cell_storage_size(size_t cell_count);
     __host__ void ensure_used_cell_storage_size(size_t cell_count);
     __host__ void ensure_quad_storage_size(size_t quad_count);
+    __host__ void ensure_tris_storage_size(size_t tris_count);
     __host__ void ensure_vert_storage_size(size_t vert_count);
     __host__ void ensure_edge_storage_size(size_t edge_count);
 

@@ -229,9 +229,11 @@ namespace cudualmc
       cudaFree(dmc.mc_vert_type);
       cudaFree(dmc.quads);
       cudaFree(dmc.verts);
+      cudaFree(dmc.mc_vert_to_edge);
+      cudaFree(dmc.tris);
     }
 
-    std::tuple<torch::Tensor, torch::Tensor> forward(torch::Tensor grid,
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> forward(torch::Tensor grid,
                                                      torch::Tensor deform,
                                                      Scalar iso)
     {
@@ -279,10 +281,17 @@ namespace cudualmc
               grid.options().dtype(indexType))
               .clone();
 
-      return {verts, quads};
+      auto tris =
+          torch::from_blob(
+              dmc.tris, torch::IntArrayRef{dmc.n_quads * 2, 3},
+              grid.options().dtype(indexType))
+              .clone();
+
+      return {verts, quads, tris};
+
     }
 
-    std::tuple<torch::Tensor, torch::Tensor> forward(torch::Tensor grid,
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> forward(torch::Tensor grid,
                                                      Scalar iso)
     {
       CHECK_INPUT(grid);
@@ -326,7 +335,13 @@ namespace cudualmc
               grid.options().dtype(indexType))
               .clone();
 
-      return {verts, quads};
+      auto tris =
+          torch::from_blob(
+              dmc.tris, torch::IntArrayRef{dmc.n_quads * 2, 3},
+              grid.options().dtype(indexType))
+              .clone();
+
+      return {verts, quads, tris};
     }
 
     void backward(torch::Tensor grid, torch::Tensor deform, Scalar iso, torch::Tensor adj_verts,
@@ -435,14 +450,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m)
 
       .def(py::init<>())
       .def("forward", pybind11::overload_cast<torch::Tensor, torch::Tensor, double>(&cudualmc::CUDMC<double, int>::forward))
-      .def("backward", pybind11::overload_cast<torch::Tensor, torch::Tensor, double, torch::Tensor, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<double, int>::backward))
       .def("forward", pybind11::overload_cast<torch::Tensor, double>(&cudualmc::CUDMC<double, int>::forward))
+      .def("backward", pybind11::overload_cast<torch::Tensor, torch::Tensor, double, torch::Tensor, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<double, int>::backward))
       .def("backward", pybind11::overload_cast<torch::Tensor, double, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<double, int>::backward));
 
   pybind11::class_<cudualmc::CUDMC<float, int>>(m, "CUDMCFloat")
       .def(py::init<>())
       .def("forward", pybind11::overload_cast<torch::Tensor, torch::Tensor, float>(&cudualmc::CUDMC<float, int>::forward))
-      .def("backward", pybind11::overload_cast<torch::Tensor, torch::Tensor, float, torch::Tensor, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<float, int>::backward))
       .def("forward", pybind11::overload_cast<torch::Tensor, float>(&cudualmc::CUDMC<float, int>::forward))
+      .def("backward", pybind11::overload_cast<torch::Tensor, torch::Tensor, float, torch::Tensor, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<float, int>::backward))
       .def("backward", pybind11::overload_cast<torch::Tensor, float, torch::Tensor, torch::Tensor>(&cudualmc::CUDMC<float, int>::backward));
 }

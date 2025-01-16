@@ -585,6 +585,17 @@ namespace cudualmc
       CHECK_CUDA(cudaMalloc((void **)&mc_vert_to_cell, allocated_quad_count * sizeof(IndexType)));
       CHECK_CUDA(cudaMalloc((void **)&mc_vert_type, allocated_quad_count * sizeof(uint8_t)));
       CHECK_CUDA(cudaMalloc((void **)&quads, allocated_quad_count * sizeof(Quad<IndexType>)));
+      CHECK_CUDA(cudaMalloc((void **)&mc_vert_to_edge, allocated_quad_count * sizeof(Edge<IndexType>)));          
+    }
+  }
+
+  template <typename Scalar, typename IndexType>
+  void CUDualMC<Scalar, IndexType>::ensure_tris_storage_size(size_t tris_count)
+  {
+    if (tris_count > allocated_tris_count)
+    {
+      allocated_tris_count = size_t(tris_count + tris_count / 5);
+      CHECK_CUDA(cudaMalloc((void **)&tris, allocated_tris_count * sizeof(Triangle<IndexType>)));
     }
   }
 
@@ -786,6 +797,12 @@ namespace cudualmc
         IndexType id = first++;
         dmc.mc_vert_to_cell[id] = used_index;
         dmc.mc_vert_type[id] = (exiting ? 3 : 0) + dim;
+
+        // Envelope
+        if(entering){
+          Edge<Vertex<Scalar>> e = {Scalar(d0), Scalar(d)};
+        }
+
 
         // dmc.used_cell_mc_vert[3 * used_index + dim] = id;
         // dmc.mc_verts[id] = computeMcVert(dmc, data, x, y, z, dim, iso);
@@ -1055,6 +1072,76 @@ namespace cudualmc
     dmc.quads[quad_index] = q;
   }
 
+
+  template <typename Scalar>
+  __device__ Scalar scalar_triple_product(const Vertex<Scalar>& v1,
+                                          const Vertex<Scalar>& v2,
+                                          const Vertex<Scalar>& v3,
+                                          const Vertex<Scalar>& ref)
+  {
+      Vertex<Scalar> cross_product = (v2 - ref).cross(v3 - ref);
+      return (v1 - ref).dot(cross_product);
+  }
+  
+  template <typename Scalar, typename IndexType>
+  __global__ void divide_quads_kernel(CUDualMC<Scalar, IndexType> dmc)
+  {
+    int quad_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (quad_index >= dmc.n_quads)
+      return;
+    
+    IndexType used_index = dmc.mc_vert_to_cell[quad_index];
+    IndexType cell_index = dmc.used_cell_index[used_index];
+
+    Quad<IndexType> q = dmc.quads[quad_index];
+    
+    IndexType i = q.i;
+    IndexType j = q.j;
+    IndexType k = q.k;
+    IndexType l = q.l;
+
+    Vertex<Scalar> v_i, v_j, v_k, v_l, v_p, v_n;
+    v_i = dmc.verts[i];
+    v_j = dmc.verts[j];
+    v_k = dmc.verts[k];
+    v_l = dmc.verts[l];
+
+    // Edge<Scalar> e = dmc.mc_vert_to_edge[cell_index]; // 여기에 좌표를 넣어야지
+    // if(e.i > 0.0f)
+    // {
+    //   v_p = e.i;
+    //   v_n = e.j;
+    // }
+    // else
+    // {
+    //   v_p = e.j;
+    //   v_n = e.i;
+    // }
+    // // Concave 여부 계산
+    // bool is_c2_concave = scalar_triple_product(v_j, v_i, v_k, v_p) < 0.0f ||
+    //                      scalar_triple_product(v_j, v_i, v_k, v_n) > 0.0f;
+    // bool is_c4_concave = scalar_triple_product(v_l, v_i, v_k, v_p) < 0.0f ||
+    //                      scalar_triple_product(v_l, v_i, v_k, v_n) > 0.0f;
+    // bool is_c1_concave = scalar_triple_product(v_i, v_j, v_l, v_p) < 0.0f ||
+    //                      scalar_triple_product(v_i, v_j, v_l, v_n) > 0.0f;
+    // bool is_c3_concave = scalar_triple_product(v_k, v_j, v_l, v_p) < 0.0f ||
+    //                      scalar_triple_product(v_k, v_j, v_l, v_n) > 0.0f;
+
+    // // Case 분기
+    // if (!is_c2_concave && !is_c4_concave)
+    // {
+        // Case 1: 두 삼각형으로 분할
+        dmc.tris[quad_index * 2 + 0] = {q.i, q.j, q.l};
+        dmc.tris[quad_index * 2 + 1] = {q.j, q.k, q.l};
+    // }
+    // else if (!is_c1_concave && !is_c3_concave)
+    // {
+    //     // Case 2: 두 삼각형으로 분할
+    //     dmc.tris[quad_index * 2 + 0] = {q.i, q.j, q.l};
+    //     dmc.tris[quad_index * 2 + 1] = {q.j, q.k, q.l};
+    // }
+  }
+
   template <typename Scalar, typename IndexType>
   void CUDualMC<Scalar, IndexType>::forward(Scalar const *d_data, Vertex<Scalar> const *d_deform, IndexType dimX, IndexType dimY,
                                             IndexType dimZ, Scalar iso, int device)
@@ -1102,7 +1189,7 @@ namespace cudualmc
     // fprintf(stderr, "mc vert (dmc quad) count: %d\n", n_quads);
 
     ensure_quad_storage_size(n_quads);
-
+    ensure_tris_storage_size(2 * n_quads);
     // index mc vertices (dmc quads)
     index_cell_mc_verts_kernel<<<(n_used_cells + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(
         *this, d_data, iso);
@@ -1125,6 +1212,8 @@ namespace cudualmc
         *this, d_data, d_deform, iso);
 
     create_quads_kernel<<<(n_quads + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(*this);
+
+    divide_quads_kernel<<<(n_quads + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(*this);
   }
 
   template <typename Scalar, typename IndexType>
