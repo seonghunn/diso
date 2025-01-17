@@ -283,7 +283,7 @@ namespace cudualmc
 
       auto tris =
           torch::from_blob(
-              dmc.tris, torch::IntArrayRef{dmc.n_quads * 2, 3},
+              dmc.tris, torch::IntArrayRef{dmc.n_tris, 3},
               grid.options().dtype(indexType))
               .clone();
 
@@ -337,7 +337,7 @@ namespace cudualmc
 
       auto tris =
           torch::from_blob(
-              dmc.tris, torch::IntArrayRef{dmc.n_quads * 2, 3},
+              dmc.tris, torch::IntArrayRef{dmc.n_tris, 3},
               grid.options().dtype(indexType))
               .clone();
 

@@ -67,6 +67,11 @@ namespace cudualmc
       z *= scalar;
       return *this;
     }
+
+    inline __device__ __host__ Vertex<T> operator/(T const &scalar) const
+    {
+      return {x / scalar, y / scalar, z / scalar};
+    }
   };
 
   template <typename T>
@@ -99,6 +104,7 @@ namespace cudualmc
     IndexType n_used_cells{0};
     IndexType n_verts{0};
     IndexType n_quads{0};
+    IndexType n_tris{0};
 
     // temp storage
     size_t allocated_temp_storage_size{};
@@ -129,6 +135,11 @@ namespace cudualmc
     Triangle<IndexType> *__restrict__ tris{};
     // TODO
     // Vertex<Scalar> *__restrict__ mc_verts{};
+
+
+    // Quad Division
+    IndexType *__restrict__ first_tris_create{};
+    IndexType *__restrict__ first_verts_create{};
 
     // output
     size_t allocated_vert_count{};
