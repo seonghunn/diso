@@ -694,6 +694,19 @@ namespace cudualmc
     dmc.used_to_first_mc_vert[used_index] = num;
   }
 
+
+  template <typename Scalar>
+  __device__ Scalar sigmoidAdjust(Scalar t)
+  {
+      constexpr Scalar BETA = Scalar(5.0); // experimental settings
+      Scalar centered = t - Scalar(0.5);
+      Scalar out = Scalar(1.0) / 
+                  (Scalar(1.0) + exp(-BETA * centered));
+
+      return out;
+  }
+
+
   template <typename Scalar, typename IndexType>
   inline __device__ Vertex<Scalar> computeMcVert(CUDualMC<Scalar, IndexType> &dmc,
                                                  Scalar const *__restrict__ data, Vertex<Scalar> const *__restrict__ deform, IndexType x,
@@ -708,6 +721,9 @@ namespace cudualmc
     Scalar d1 = data[v1];
 
     Scalar t = (d1 != d0) ? clamp((iso - d0) / (d1 - d0), Scalar(0.0), Scalar(1.0)) : Scalar(0.5);
+
+
+    t = sigmoidAdjust(t);
 
     Vertex<Scalar> p0 = {Scalar(x), Scalar(y), Scalar(z)};
     Vertex<Scalar> p1 = {Scalar(x + offset[0]), Scalar(y + offset[1]), Scalar(z + offset[2])};
@@ -1175,17 +1191,17 @@ namespace cudualmc
     v_n = e.j;
     
     // Concave test
-    bool is_c2_concave = scalar_triple_product(v_j, v_i, v_k, v_p) < 0.0f ||
-                         scalar_triple_product(v_j, v_i, v_k, v_n) > 0.0f;
-    bool is_c4_concave = scalar_triple_product(v_l, v_i, v_k, v_p) < 0.0f ||
-                         scalar_triple_product(v_l, v_i, v_k, v_n) > 0.0f;
     bool is_c1_concave = scalar_triple_product(v_i, v_j, v_l, v_p) < 0.0f ||
                          scalar_triple_product(v_i, v_j, v_l, v_n) > 0.0f;
+    bool is_c2_concave = scalar_triple_product(v_j, v_i, v_k, v_p) < 0.0f ||
+                         scalar_triple_product(v_j, v_i, v_k, v_n) > 0.0f;
     bool is_c3_concave = scalar_triple_product(v_k, v_j, v_l, v_p) < 0.0f ||
                          scalar_triple_product(v_k, v_j, v_l, v_n) > 0.0f;
+    bool is_c4_concave = scalar_triple_product(v_l, v_i, v_k, v_p) < 0.0f ||
+                         scalar_triple_product(v_l, v_i, v_k, v_n) > 0.0f;
 
     // Case
-    if(is_c1_concave && is_c2_concave && is_c3_concave && is_c4_concave)
+    if((is_c1_concave || is_c3_concave) && (is_c2_concave ||is_c4_concave))
     {
       // 4 tris
       dmc.first_tris_create[quad_index] = 4;
@@ -1235,18 +1251,18 @@ namespace cudualmc
     //}
 
     // Concave test
-    bool is_c2_concave = scalar_triple_product(v_j, v_i, v_k, v_p) < 0.0f ||
-                         scalar_triple_product(v_j, v_i, v_k, v_n) > 0.0f;
-    bool is_c4_concave = scalar_triple_product(v_l, v_i, v_k, v_p) < 0.0f ||
-                         scalar_triple_product(v_l, v_i, v_k, v_n) > 0.0f;
     bool is_c1_concave = scalar_triple_product(v_i, v_j, v_l, v_p) < 0.0f ||
                          scalar_triple_product(v_i, v_j, v_l, v_n) > 0.0f;
+    bool is_c2_concave = scalar_triple_product(v_j, v_i, v_k, v_p) < 0.0f ||
+                         scalar_triple_product(v_j, v_i, v_k, v_n) > 0.0f;
     bool is_c3_concave = scalar_triple_product(v_k, v_j, v_l, v_p) < 0.0f ||
                          scalar_triple_product(v_k, v_j, v_l, v_n) > 0.0f;
+    bool is_c4_concave = scalar_triple_product(v_l, v_i, v_k, v_p) < 0.0f ||
+                         scalar_triple_product(v_l, v_i, v_k, v_n) > 0.0f;
 
     IndexType tris_idx = dmc.first_tris_create[quad_index];
     // Case
-    if(is_c1_concave && is_c2_concave && is_c3_concave && is_c4_concave)
+    if((is_c1_concave || is_c3_concave) && (is_c2_concave ||is_c4_concave))
     {
       // 4 tris
       //printf("Case 1\n");
