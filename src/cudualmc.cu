@@ -720,7 +720,7 @@ namespace cudualmc
 
     Scalar t = (d1 != d0) ? clamp((iso - d0) / (d1 - d0), Scalar(0.0), Scalar(1.0)) : Scalar(0.5);
 
-    t = sigmoidAdjust(t);
+    // t = sigmoidAdjust(t);
 
     Vertex<Scalar> p0 = {Scalar(x), Scalar(y), Scalar(z)};
     Vertex<Scalar> p1 = {Scalar(x + offset[0]), Scalar(y + offset[1]), Scalar(z + offset[2])};
@@ -1186,8 +1186,8 @@ namespace cudualmc
     v_l = dmc.verts[l];
 
     Edge<Vertex<Scalar>> e = dmc.mc_vert_to_edge[quad_index];
-    v_n = e.i;
-    v_p = e.j;
+    v_p = e.i;
+    v_n = e.j;
 
     // Concave test
     bool is_c1_concave = scalar_triple_product(v_i, v_l, v_j, v_p) < 0.0f ||
@@ -1238,8 +1238,8 @@ namespace cudualmc
     v_l = dmc.verts[l];
 
     Edge<Vertex<Scalar>> e = dmc.mc_vert_to_edge[quad_index];
-    v_n = e.i;
-    v_p = e.j;
+    v_p = e.i;
+    v_n = e.j;
     // if(quad_index==31){
     //  printf("quad %d vi : %f %f %f\n", quad_index, v_i.x, v_i.y, v_i.z);
     //  printf("quad %d vj : %f %f %f\n", quad_index, v_j.x, v_j.y, v_j.z);
@@ -1273,17 +1273,17 @@ namespace cudualmc
       dmc.tris[tris_idx + 2] = {q.k, q.l, vert_idx};
       dmc.tris[tris_idx + 3] = {q.l, q.i, vert_idx};
     }
-    else if (!is_c2_concave && !is_c4_concave)
+    else if (is_c2_concave || is_c4_concave)
     {
       // printf("Case 2\n");
       dmc.tris[tris_idx] = {q.i, q.j, q.l};
       dmc.tris[tris_idx + 1] = {q.j, q.k, q.l};
     }
-    else if (!is_c1_concave && !is_c3_concave)
+    else if (is_c1_concave || is_c3_concave)
     {
       // printf("Case 3\n");
-      dmc.tris[tris_idx] = {q.j, q.k, q.l};
-      dmc.tris[tris_idx + 1] = {q.i, q.j, q.l};
+      dmc.tris[tris_idx] = {q.i, q.j, q.k};
+      dmc.tris[tris_idx + 1] = {q.i, q.k, q.l};
     }
     else
     {
