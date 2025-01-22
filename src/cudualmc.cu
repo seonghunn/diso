@@ -720,7 +720,7 @@ namespace cudualmc
 
     Scalar t = (d1 != d0) ? clamp((iso - d0) / (d1 - d0), Scalar(0.0), Scalar(1.0)) : Scalar(0.5);
 
-    // t = sigmoidAdjust(t);
+    t = sigmoidAdjust(t);
 
     Vertex<Scalar> p0 = {Scalar(x), Scalar(y), Scalar(z)};
     Vertex<Scalar> p1 = {Scalar(x + offset[0]), Scalar(y + offset[1]), Scalar(z + offset[2])};
@@ -1215,7 +1215,7 @@ namespace cudualmc
   }
 
   template <typename Scalar, typename IndexType>
-  __global__ void divide_quads_kernel(CUDualMC<Scalar, IndexType> dmc)
+  __global__ void divide_quads_kernel(CUDualMC<Scalar, IndexType> dmc, Scalar const *__restrict__ data, Scalar iso)
   {
     int quad_index = blockIdx.x * blockDim.x + threadIdx.x;
     if (quad_index >= dmc.n_quads)
@@ -1266,8 +1266,16 @@ namespace cudualmc
       // 4 tris
       // printf("Case 1\n");
       IndexType vert_idx = dmc.first_verts_create[quad_index] + dmc.n_verts;
-      Vertex<Scalar> v_m = (v_p + v_n) / 2.0f;
-      dmc.verts[vert_idx] = v_m;
+      // Vertex<Scalar> v_m = (v_p + v_n) / 2.0f;
+      Scalar d0, d1;
+      d0 = data[dmc.gA(v_p.x, v_p.y, v_p.z)];
+      d1 = data[dmc.gA(v_n.x, v_n.y, v_n.z)];
+      Scalar t = (d1 != d0) ? clamp((iso - d0) / (d1 - d0), Scalar(0.0), Scalar(1.0)) : Scalar(0.5);
+      t = sigmoidAdjust(t);
+      Vertex<Scalar> v_e = v_p + (v_n - v_p) * t;
+
+      // dmc.verts[vert_idx] = v_m;
+      dmc.verts[vert_idx] = v_e;
       dmc.tris[tris_idx] = {q.i, q.j, vert_idx};
       dmc.tris[tris_idx + 1] = {q.j, q.k, vert_idx};
       dmc.tris[tris_idx + 2] = {q.k, q.l, vert_idx};
@@ -1398,7 +1406,7 @@ namespace cudualmc
     IndexType n_verts_added = 0;
     CHECK_CUDA(cudaMemcpy(&n_verts_added, first_verts_create + n_quads, sizeof(IndexType), cudaMemcpyDeviceToHost));
 
-    divide_quads_kernel<<<(n_quads + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(*this);
+    divide_quads_kernel<<<(n_quads + BLOCK_SIZE - 1) / BLOCK_SIZE, BLOCK_SIZE>>>(*this, d_data, iso);
     n_verts += n_verts_added;
   }
 
